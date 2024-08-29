@@ -213,6 +213,7 @@ Name | Version | Source | Description
 --- | --- | --- | ---
 `vnet` | - | ../../modules/vnet | 
 `vnet_peering` | - | ../../modules/vnet_peering | 
+`public_ip` | - | ../../modules/public_ip | 
 `natgw` | - | ../../modules/natgw | 
 `load_balancer` | - | ../../modules/loadbalancer | 
 `appgw` | - | ../../modules/appgw | 
@@ -245,6 +246,7 @@ Name | Type | Description
 [`create_resource_group`](#create_resource_group) | `bool` | When set to `true` it will cause a Resource Group creation.
 [`tags`](#tags) | `map` | Map of tags to assign to the created resources.
 [`vnet_peerings`](#vnet_peerings) | `map` | A map defining VNET peerings.
+[`public_ips`](#public_ips) | `object` | A map defining Public IP Addresses and Prefixes.
 [`natgws`](#natgws) | `map` | A map defining NAT Gateways.
 [`load_balancers`](#load_balancers) | `map` | A map containing configuration for all (both private and public) Load Balancers.
 [`appgws`](#appgws) | `map` | A map defining all Application Gateways in the current deployment.
@@ -269,7 +271,7 @@ Name |  Description
 `test_vms_usernames` | Initial administrative username to use for test VMs.
 `test_vms_passwords` | Initial administrative password to use for test VMs.
 `test_vms_ips` | IP Addresses of the test VMs.
-`app_lb_frontend_ips` | IP Addresses of the load balancers.
+`test_lb_frontend_ips` | IP Addresses of the test load balancers.
 
 ### Required Inputs details
 
@@ -292,7 +294,7 @@ Type: string
 #### vnets
 
 A map defining VNETs.
-  
+
 For detailed documentation on each property refer to [module documentation](../../modules/vnet)
 
 - `create_virtual_network`  - (`bool`, optional, defaults to `true`) when set to `true` will create a VNET, `false` will source
@@ -378,7 +380,7 @@ Example:
 ```
 name_prefix = "test-"
 ```
-  
+
 **Note!** \
 This prefix is not applied to existing resources. If you plan to reuse i.e. a VNET please specify it's full name,
 even if it is also prefixed with the same value as the one in this property.
@@ -394,7 +396,7 @@ Default value: ``
 
 When set to `true` it will cause a Resource Group creation.
 Name of the newly specified RG is controlled by `resource_group_name`.
-  
+
 When set to `false` the `resource_group_name` parameter is used to specify a name of an existing Resource Group.
 
 
@@ -441,14 +443,57 @@ Default value: `map[]`
 
 <sup>[back to list](#modules-optional-inputs)</sup>
 
+#### public_ips
+
+A map defining Public IP Addresses and Prefixes.
+
+Following properties are available:
+
+- `public_ip_addresses` - (`map`, optional) map of objects describing Public IP Addresses, please refer to
+                          [module documentation](../../modules/public_ip#public_ip_addresses)
+                          for available properties.
+- `public_ip_prefixes`  - (`map`, optional) map of objects describing Public IP Prefixes, please refer to
+                          [module documentation](../../modules/public_ip#public_ip_prefixes)
+                          for available properties.
+
+
+Type: 
+
+```hcl
+object({
+    public_ip_addresses = optional(map(object({
+      create                     = bool
+      name                       = string
+      resource_group_name        = optional(string)
+      zones                      = optional(list(string))
+      domain_name_label          = optional(string)
+      idle_timeout_in_minutes    = optional(number)
+      prefix_name                = optional(string)
+      prefix_resource_group_name = optional(string)
+    })), {})
+    public_ip_prefixes = optional(map(object({
+      create              = bool
+      name                = string
+      resource_group_name = optional(string)
+      zones               = optional(list(string))
+      length              = optional(number)
+    })), {})
+  })
+```
+
+
+Default value: `map[]`
+
+<sup>[back to list](#modules-optional-inputs)</sup>
+
 #### natgws
 
-A map defining NAT Gateways. 
+A map defining NAT Gateways.
 
 Please note that a NAT Gateway is a zonal resource, this means it's always placed in a zone (even when you do not specify one
 explicitly). Please refer to Microsoft documentation for notes on NAT Gateway's zonal resiliency.
 For detailed documentation on each property refer to [module documentation](../../modules/natgw).
-  
+
 Following properties are supported:
 - `name`                - (`string`, required) a name of a NAT Gateway. In case `create_natgw = false` this should be a full
                           resource name, including prefixes.
@@ -495,14 +540,16 @@ map(object({
     idle_timeout        = optional(number, 4)
     public_ip = optional(object({
       create              = bool
-      name                = string
+      name                = optional(string)
       resource_group_name = optional(string)
+      key                 = optional(string)
     }))
     public_ip_prefix = optional(object({
       create              = bool
-      name                = string
+      name                = optional(string)
       resource_group_name = optional(string)
       length              = optional(number)
+      key                 = optional(string)
     }))
   }))
 ```
@@ -534,8 +581,8 @@ Following properties are available:
 - `nsg_auto_rules_settings` - (`map`, optional, defaults to `null`) a map defining a location of an existing NSG rule that will
                               be populated with `Allow` rules for each load balancing rule (`in_rules`), please refer to
                               [module documentation](../../modules/loadbalancer#nsg_auto_rules_settings) for
-                              available properties. 
-                                
+                              available properties.
+
   Please note that in this example two additional properties are available:
 
   - `nsg_vnet_key` - (`string`, optional, mutually exclusive with `nsg_name`) a key pointing to a VNET definition in the
@@ -581,9 +628,11 @@ map(object({
     frontend_ips = optional(map(object({
       name                          = string
       subnet_key                    = optional(string)
-      public_ip_name                = optional(string)
       create_public_ip              = optional(bool, false)
+      public_ip_name                = optional(string)
       public_ip_resource_group_name = optional(string)
+      public_ip_key                 = optional(string)
+      public_ip_prefix_key          = optional(string)
       private_ip_address            = optional(string)
       gwlb_key                      = optional(string)
       in_rules = optional(map(object({
@@ -620,7 +669,7 @@ For detailed documentation on how to configure this resource, for available prop
 refer to [module documentation](../../modules/appgw).
 
 **Note!** \
-The `rules` property is meant to bind together `backend_setting`, `redirect` or `url_path_map` (all 3 are mutually exclusive). 
+The `rules` property is meant to bind together `backend_setting`, `redirect` or `url_path_map` (all 3 are mutually exclusive).
 It represents the Rules section of an Application Gateway in Azure Portal.
 
 Below you can find a brief list of most important properties:
@@ -642,11 +691,11 @@ Below you can find a brief list of most important properties:
                        settings, see [module's documentation](../../modules/appgw#backend_settings) for details.
 - `probes`           - (`map`, optional, defaults to module default) defines backend probes used check health of backends, see
                        [module's documentation](../../modules/appgw#probes) for details.
-- `rewrites`         - (`map`, optional, defaults to module default) defines rewrite rules, see 
+- `rewrites`         - (`map`, optional, defaults to module default) defines rewrite rules, see
                        [module's documentation](../../modules/appgw#rewrites) for details.
-- `redirects`        - (`map`, optional, mutually exclusive with `backend_settings` and `url_path_maps`) static redirects 
+- `redirects`        - (`map`, optional, mutually exclusive with `backend_settings` and `url_path_maps`) static redirects
                        definition, see [module's documentation](../../modules/appgw#redirects) for details.
-- `url_path_maps`    - (`map`, optional, mutually exclusive with `backend_settings` and `redirects`) URL path maps definition, 
+- `url_path_maps`    - (`map`, optional, mutually exclusive with `backend_settings` and `redirects`) URL path maps definition,
                        see [module's documentation](../../modules/appgw#url_path_maps) for details.
 - `rules`            - (`map`, required) Application Gateway Rules definition, bind together a `listener` with either
                        `backend_setting`, `redirect` or `url_path_map`, see
@@ -662,9 +711,10 @@ map(object({
     subnet_key = string
     zones      = optional(list(string))
     public_ip = object({
-      name                = string
       create              = optional(bool, true)
+      name                = optional(string)
       resource_group_name = optional(string)
+      key                 = optional(string)
     })
     domain_name_label = optional(string)
     capacity = optional(object({
@@ -794,7 +844,7 @@ Following properties are supported:
 - `name`                - (`string`, required) name of the Application Insights.
 - `update_domain_count` - (`number`, optional, defaults to Azure default) specifies the number of update domains that are used.
 - `fault_domain_count`  - (`number`, optional, defaults to Azure default) specifies the number of fault domains that are used.
-  
+
 **Note!** \
 Please keep in mind that Azure defaults are not working for every region (especially the small ones, without any Availability
 Zones). Please verify how many update and fault domain are supported in a region before deploying this resource.
@@ -875,7 +925,7 @@ You can create or re-use an existing Storage Account and/or File Share. For deta
                                 will host (created) a Storage Account. When skipped the code will fall back to
                                 `var.resource_group_name`.
 - `storage_account`           - (`map`, optional, defaults to `{}`) a map controlling basic Storage Account configuration.
-                                  
+
   The property you should pay attention to is:
 
   - `create` - (`bool`, optional, defaults to module default) controls if the Storage Account specified in the `name` property
@@ -884,8 +934,8 @@ You can create or re-use an existing Storage Account and/or File Share. For deta
   For detailed documentation see [module's documentation](../../modules/bootstrap#storage_account).
 
 - `storage_network_security`  - (`map`, optional, defaults to `{}`) a map defining network security settings for a **new**
-                                storage account. 
-                                  
+                                storage account.
+
   The properties you should pay attention to are:
 
   - `allowed_subnet_keys` - (`list`, optional, defaults to `[]`) a list of keys pointing to Subnet definitions in the
@@ -895,9 +945,9 @@ You can create or re-use an existing Storage Account and/or File Share. For deta
                             Subnets described in `allowed_subnet_keys`.
 
   For detailed documentation see [module's documentation](../../modules/bootstrap#storage_network_security).
-                            
+
 - `file_shares_configuration` - (`map`, optional, defaults to `{}`) a map defining common File Share setting.
-                                  
+
   The properties you should pay attention to are:
 
   - `create_file_shares`            - (`bool`, optional, defaults to module default) controls if the File Shares defined in the
@@ -1162,6 +1212,7 @@ map(object({
       create_public_ip              = optional(bool, false)
       public_ip_name                = optional(string)
       public_ip_resource_group_name = optional(string)
+      public_ip_key                 = optional(string)
       private_ip_address            = optional(string)
       load_balancer_key             = optional(string)
       application_gateway_key       = optional(string)
@@ -1358,9 +1409,11 @@ map(object({
       frontend_ips = optional(map(object({
         name                          = string
         subnet_key                    = optional(string)
-        public_ip_name                = optional(string)
         create_public_ip              = optional(bool, false)
+        public_ip_name                = optional(string)
         public_ip_resource_group_name = optional(string)
+        public_ip_key                 = optional(string)
+        public_ip_prefix_key          = optional(string)
         private_ip_address            = optional(string)
         gwlb_key                      = optional(string)
         in_rules = optional(map(object({
@@ -1405,10 +1458,13 @@ map(object({
       custom_data = optional(string)
     }))
     bastions = map(object({
-      name           = string
-      public_ip_name = optional(string)
-      vnet_key       = string
-      subnet_key     = string
+      name                          = string
+      create_public_ip              = optional(bool, true)
+      public_ip_name                = optional(string)
+      public_ip_resource_group_name = optional(string)
+      public_ip_key                 = optional(string)
+      vnet_key                      = string
+      subnet_key                    = string
     }))
   }))
 ```
